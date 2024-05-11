@@ -1,0 +1,329 @@
+/*
+PA-5-Source.cpp
+
+Princeton Epeagba, J00701287
+*/
+
+#include <iostream>
+#include <vector>
+#include <algorithm>    // For reverse, max, includes, remove_if and sort functions
+
+// For a combination earnings hash table used in Part 5 of the assignment in the customAlgorithm
+#include <unordered_map>    
+#include <chrono>   // For time
+
+using namespace std;
+
+// Struct for task values
+struct Task {
+    int id;
+    int value;
+    int startTime;
+    int endTime;
+};
+
+// Function to compare tasks based on end time. Used for sorting
+bool compareTasks(const Task& a, const Task& b) {
+    return a.endTime < b.endTime;
+}
+
+// Function to print a set of tasks and earnings
+void printTaskSet(const vector<Task>& tasks, int total_earning) {
+    for (const auto& task : tasks) {
+        cout << "Task_" << task.id << " -> ";
+    }
+    cout << "with a total earning of " << total_earning << "." << endl;
+}
+
+// Function to check for overlapp in tasks
+bool noOverlap(const vector<Task>& selected_tasks) {
+    for (size_t i = 0; i < selected_tasks.size(); i++) {
+        for (size_t j = i + 1; j < selected_tasks.size(); j++) {
+            if (selected_tasks[i].endTime > selected_tasks[j].startTime) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Function for customAlgorithm that finds all Max(i) task set values
+void findAllMaxCombinations(const vector<Task>& tasks, int index, vector<Task>& currentCombination, vector<vector<Task>>& allCombinations) {
+    if (index == tasks.size()) {
+        if (noOverlap(currentCombination)) {
+            // Checks if current combination of tasks are a Max(i).
+            for (const auto& comb : allCombinations) {
+                if (includes(comb.begin(), comb.end(), currentCombination.begin(), currentCombination.end(), compareTasks)) {  // Checks to make sure that the current task combination is not subsets of another combo
+                    return;
+                }
+            }
+            // Removes redundant combinations for subsets of the current combination
+            allCombinations.erase(remove_if(allCombinations.begin(), allCombinations.end(),[&currentCombination](const vector<Task>& comb) {
+                return includes(currentCombination.begin(), currentCombination.end(), comb.begin(), comb.end(), compareTasks);
+                }), allCombinations.end());
+
+            // Adds combination of tasks as a Max(i)
+            allCombinations.push_back(currentCombination);
+        }
+        return;
+    }
+    // Includes the current task
+    currentCombination.push_back(tasks[index]);
+    findAllMaxCombinations(tasks, index + 1, currentCombination, allCombinations);
+
+    // Excludes the current task
+    currentCombination.pop_back();
+    findAllMaxCombinations(tasks, index + 1, currentCombination, allCombinations);
+}
+
+// Brute-force algorithm to find the maximum earnings
+void bruteForce(const vector<Task>& tasks) {
+    int n = tasks.size();
+    int max_earning = 0;
+    vector<Task> max_earning_tasks;
+
+    // Uses bitwise operand to check all possibilities for tasks (2^n for brute force)
+    for (int i = 0; i < (1 << n); ++i) {
+        int total_earning = 0;
+        vector<Task> selected_tasks;
+
+        // Checks each task
+        for (int j = 0; j < n; ++j) {
+            if (i & (1 << j)) {
+                // Checks if the task does not overlap with the current one and selects it if so
+                if (selected_tasks.empty() || selected_tasks.back().endTime <= tasks[j].startTime) {
+                    total_earning += tasks[j].value;
+                    selected_tasks.push_back(tasks[j]);
+                }
+            }
+        }
+
+        // Updates Max(i) if a higher earning combination is found
+        if (total_earning > max_earning && noOverlap(selected_tasks)) {
+            max_earning = total_earning;
+            max_earning_tasks = selected_tasks;
+        }
+    }
+
+    // Prints the best earning task set
+    cout << "\nMax earning set of tasks (Brute Force):" << endl;
+    printTaskSet(max_earning_tasks, max_earning);
+}
+
+// Finds Max(i)
+int recursiveDPUtility(const vector<Task>& tasks, int index, vector<int>& dp) {
+    if (index < 0)
+        return 0;   // Base case
+    if (dp[index] != -1)
+        return dp[index];   // If not -1, Max(i) has been found
+
+    // Checks to see whether each task can be included or not included based on time
+    int include = tasks[index].value;
+    int i = -1;
+    for (int j = index - 1; j >= 0; --j) {
+        if (tasks[j].endTime <= tasks[index].startTime) {
+            i = j;
+            break;
+        }
+    }
+    if (i != -1)
+        include += recursiveDPUtility(tasks, i, dp);
+
+
+    int exclude = recursiveDPUtility(tasks, index - 1, dp);
+
+
+    dp[index] = max(include, exclude);
+
+    return dp[index];
+}
+
+// Traces back to assemble tasks included for Max(i)
+void reconstructTasks(const vector<Task>& tasks, const vector<int>& dp, int index, vector<Task>& max_earning_tasks) {
+    if (index < 0) return; // Base case
+
+    if (index == 0 || dp[index] != dp[index - 1]) { // Excludes if the same
+        max_earning_tasks.push_back(tasks[index]); // Includes the current task
+        int i = -1;
+        // Finds the last non-overlapping task
+        for (int j = index - 1; j >= 0; --j) {
+            if (tasks[j].endTime <= tasks[index].startTime) {
+                i = j;
+                break;
+            }
+        }
+        reconstructTasks(tasks, dp, i, max_earning_tasks);  // Continues to search
+    }
+    else {
+        reconstructTasks(tasks, dp, index - 1, max_earning_tasks);  // Next index
+    }
+}
+
+// Recursive Dynamic Programming algorithm to find max earnings
+void recursiveDP(const vector<Task>& tasks) {
+    int n = tasks.size();
+    vector<int> dp(n, -1); // Memoization table
+
+    // Find Max(i)
+    int max_earning = recursiveDPUtility(tasks, n - 1, dp);
+
+    // Traces back for best task set
+    vector<Task> max_earning_tasks;
+    reconstructTasks(tasks, dp, n - 1, max_earning_tasks);
+
+
+    cout << "\nMax earning set of tasks (recursive DP):" << endl;
+    reverse(max_earning_tasks.begin(), max_earning_tasks.end());
+    printTaskSet(max_earning_tasks, max_earning);
+}
+
+// Non-recursive Dynamic Programming algorithm to find maximum earnings
+void nonRecursiveDP(const vector<Task>& tasks) {
+    int n = tasks.size();
+    vector<int> dp(n); // Stores Max(i)
+
+    dp[0] = tasks[0].value;
+
+    // Calculates Max(i)
+    for (int i = 1; i < n; ++i) {
+        // Finds the last compatible task
+        int lastCompatible = -1;
+        for (int j = i - 1; j >= 0; --j) {
+            if (tasks[j].endTime <= tasks[i].startTime) {
+                lastCompatible = j;
+                break;
+            }
+        }
+
+        // Calculates earnings for included tasks
+        int includeEarnings = tasks[i].value;
+        if (lastCompatible != -1) {
+            includeEarnings += dp[lastCompatible];  // Adds earnings from the last compatible task
+        }
+
+        // Earnings if excluded
+        int excludeEarnings = dp[i - 1];
+
+        // Finds Max(i)
+        dp[i] = max(includeEarnings, excludeEarnings);
+    }
+
+    // Reconstructs the set of tasks that give the Max(i) with no overlapping
+    vector<Task> max_earning_tasks;
+    int index = n - 1;
+    while (index >= 0) {
+        if (index == 0 || dp[index] != dp[index - 1]) {
+            max_earning_tasks.push_back(tasks[index]);
+            int include_value = tasks[index].value;
+
+
+            int lastCompatibleIndex = -1;
+            for (int j = index - 1; j >= 0; --j) {
+                if (tasks[j].endTime <= tasks[index].startTime) {
+                    lastCompatibleIndex = j;
+                    include_value += dp[j];  // Sums the value of the last compatible task
+                    break;
+                }
+            }
+
+            // Compares the current task value with the last compatible task value in the index to see if it is included
+            if (dp[index] == include_value) {
+                index = lastCompatibleIndex;
+            }
+            else {
+                --index;
+            }
+        }
+        else {
+            --index;
+        }
+    }
+
+    cout << "\nMax earning set of tasks (non-recursive DP):" << endl;
+    reverse(max_earning_tasks.begin(), max_earning_tasks.end());
+    printTaskSet(max_earning_tasks, dp[n - 1]);
+}
+
+
+// Custom algorithm for Part 5 requirement - Uses combination of brute force and recursive DP simplicity in task management
+void customAlgorithm(const vector<Task>& tasks) {
+    vector<vector<Task>> allMaxCombinations;
+    vector<Task> currentCombination;
+    findAllMaxCombinations(tasks, 0, currentCombination, allMaxCombinations);
+
+    // Groups the combinations of tasks by earnings
+    unordered_map<int, vector<vector<Task>>> earningToCombinations;
+    for (const auto& combination : allMaxCombinations) {
+        int totalEarning = 0;
+        for (const auto& task : combination) {
+            totalEarning += task.value;
+        }
+        earningToCombinations[totalEarning].push_back(combination);
+    }
+
+    // Outputs all combinations grouped based on earnings
+    cout << "\nThere are " << earningToCombinations.size() << " options to select different sets of tasks." << endl;
+    int optionNumber = 1;
+    for (const auto& entry : earningToCombinations) {
+        int earning = entry.first;
+        const auto& combinations = entry.second;
+        for (const auto& combination : combinations) {
+            cout << "Option " << optionNumber++ << ": ";
+            for (const Task& task : combination) {
+                cout << "Task_" << task.id << " -> ";
+            }
+            cout << "with a total earning of " << earning << "." << endl;
+        }
+    }
+}
+
+int main() {
+    
+    int n;
+    cout << "Enter the number of tasks: ";
+    cin >> n;
+
+    vector<Task> tasks(n);
+
+    for (int i = 0; i < n; ++i) {
+        cout << "Enter value, start time, and end time for task " << (i + 1) << " (separated by space): ";
+        cin >> tasks[i].value >> tasks[i].startTime >> tasks[i].endTime;
+        tasks[i].id = i + 1;
+    }
+    /*  // For debugging - Uses arbitrary values rather than manually entering through user prompts every time
+    vector<Task> tasks = {
+        {1, 5, 1, 4}, {2, 1, 3, 5}, {3, 8, 0, 6}, {4, 4, 4, 7},
+        {5, 6, 3, 8}, {6, 3, 5, 9}, {7, 2, 6, 10}, {8, 4, 8, 11}
+    };
+    */
+
+    // Sort tasks by end time
+    sort(tasks.begin(), tasks.end(), compareTasks);
+
+    // Outputs all tasks
+    cout << "All tasks sorted by end time:" << endl;
+    for (const auto& task : tasks) {
+        cout << "Task ID: " << task.id << ", Value: " << task.value << ", Start time: " << task.startTime << ", End time: " << task.endTime << endl;
+    }
+
+    // Each algorithm is ran and timed
+    auto start = chrono::high_resolution_clock::now();
+    bruteForce(tasks);
+    auto end = chrono::high_resolution_clock::now();
+    cout << "Time spent in the Brute Force algorithm: " << chrono::duration_cast<chrono::microseconds>(end - start).count() << " microsseconds." << endl;
+
+    start = chrono::high_resolution_clock::now();
+    recursiveDP(tasks);
+    end = chrono::high_resolution_clock::now();
+    cout << "Time spent in the Recursive DP algorithm: " << chrono::duration_cast<chrono::microseconds>(end - start).count() << " microseconds." << endl;
+
+    start = chrono::high_resolution_clock::now();
+    nonRecursiveDP(tasks);
+    end = chrono::high_resolution_clock::now();
+    cout << "Time spent in Non-Recursive DP algorithm: " << chrono::duration_cast<chrono::microseconds>(end - start).count() << " microseconds." << endl;
+
+
+    customAlgorithm(tasks);
+
+    return 0;
+}
